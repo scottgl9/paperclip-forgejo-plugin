@@ -1,0 +1,20 @@
+import type { PaperclipPluginManifestV1 } from '@paperclipai/plugin-sdk';
+export const manifest: PaperclipPluginManifestV1 = {
+ id:'paperclip.forgejo', apiVersion:1, version:'0.1.0', displayName:'Forgejo',
+ description:'Explicitly granted Forgejo repository connector: bounded PR/issue reads and explicit comment/review writes with signed webhook intake.',
+ author:'Paperclip Forgejo contributors', categories:['connector','automation'],
+ capabilities:['http.outbound','webhooks.receive','plugin.state.read','plugin.state.write','secrets.read-ref','agent.tools.register','issues.read','issues.create','companies.read'],
+ entrypoints:{worker:'./dist/worker.js'},
+ webhooks:[{endpointKey:'forgejo',displayName:'Forgejo webhook',description:'Signed Forgejo pull-request and issue events for explicitly granted repositories.'}],
+ tools:[
+  {name:'list_pull_requests',displayName:'List pull requests',description:'List up to 30 pull requests in a granted repository.',parametersSchema:{type:'object',required:['repository'],properties:{repository:{type:'string'},state:{type:'string',enum:['open','closed','all']}}}},
+  {name:'list_issues',displayName:'List issues',description:'List up to 30 issues in a granted repository.',parametersSchema:{type:'object',required:['repository'],properties:{repository:{type:'string'},state:{type:'string',enum:['open','closed','all']}}}},
+  {name:'get_pull_diff',displayName:'Get pull request diff',description:'Read a bounded pull request diff in a granted repository.',parametersSchema:{type:'object',required:['repository','number'],properties:{repository:{type:'string'},number:{type:'integer'}}}},
+  {name:'list_reviews',displayName:'List reviews',description:'List reviews for a pull request.',parametersSchema:{type:'object',required:['repository','number'],properties:{repository:{type:'string'},number:{type:'integer'}}}},
+  {name:'get_commit_statuses',displayName:'Get commit statuses',description:'Read statuses for a full commit SHA.',parametersSchema:{type:'object',required:['repository','sha'],properties:{repository:{type:'string'},sha:{type:'string'}}}},
+  {name:'post_comment',displayName:'Post comment',description:'Explicitly post a comment to a granted repository issue or pull request.',parametersSchema:{type:'object',required:['repository','number','body','operationId'],properties:{repository:{type:'string'},number:{type:'integer'},body:{type:'string'},operationId:{type:'string'}}}},
+  {name:'submit_review',displayName:'Submit review',description:'Explicitly submit a pull request review (not a merge).',parametersSchema:{type:'object',required:['repository','number','event','commitSha','operationId','body'],properties:{repository:{type:'string'},number:{type:'integer'},commitSha:{type:'string'},operationId:{type:'string'},event:{type:'string',enum:['APPROVE','REQUEST_CHANGES','COMMENT']},body:{type:'string'}}}}
+ ],
+ instanceConfigSchema:{type:'object',required:['enabled'],properties:{enabled:{type:'boolean',default:false,title:'Enable Forgejo connector'},baseUrl:{type:'string',title:'Forgejo HTTPS origin'},webhookSecret:{type:'object',format:'secret-ref',title:'Webhook signing secret'},repositories:{type:'array',minItems:1,items:{type:'object',required:['name','companyId','agentId','forgejoUsername','allowedOperations','readSecret'],properties:{name:{type:'string'},companyId:{type:'string'},agentId:{type:'string'},forgejoUsername:{type:'string'},allowedOperations:{type:'array',items:{type:'string',enum:['list_pull_requests','list_issues','get_pull_diff','list_reviews','get_commit_statuses','post_comment','submit_review']}},readSecret:{type:'object',format:'secret-ref'},writeSecret:{type:'object',format:'secret-ref'}}}}}}
+};
+export default manifest;

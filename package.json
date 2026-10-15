@@ -1,0 +1,29 @@
+{
+  "name": "paperclip-forgejo-plugin",
+  "version": "0.1.0",
+  "description": "Bounded Forgejo connector for Paperclip",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@paperclipai/plugin-sdk": "2026.1012.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "typescript": "5.9.3"
+  },
+  "paperclipPlugin": {
+    "manifest": "./dist/manifest.js",
+    "worker": "./dist/worker.js"
+  },
+  "license": "Apache-2.0"
+}
