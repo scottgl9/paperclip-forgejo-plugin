@@ -36,8 +36,10 @@ test('pull request creation is restricted to same-repository branches and bounde
 });
 
 test('list operations need no item number and review approval is pinned to a full commit SHA',()=>{
- assert.equal(toolPath('acme/app','list_pull_requests',{state:'open'}).path,'/api/v1/repos/acme/app/pulls?state=open&limit=30');
+ assert.equal(toolPath('acme/app','list_pull_requests',{state:'open'}).path,'/api/v1/repos/acme/app/pulls?state=open&page=1&limit=30');
  assert.throws(()=>toolPath('acme/app','submit_review',{number:12,event:'APPROVE',body:'ok'}));
  const req=toolPath('acme/app','submit_review',{number:12,event:'APPROVE',body:'ok',commitSha:'a'.repeat(40)});
  assert.equal(req.body.commit_id,'a'.repeat(40));
 });
+
+test('public APPROVE translates to installed Forgejo APPROVED event',()=>{assert.equal(toolPath('acme/app','submit_review',{number:1,event:'APPROVE',body:'x',commitSha:'a'.repeat(40)}).body.event,'APPROVED');});

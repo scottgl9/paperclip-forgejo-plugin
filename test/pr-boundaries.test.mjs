@@ -5,7 +5,25 @@ import plugin from '../dist/plugin.js';
 import manifest from '../dist/manifest.js';
 const sha='a'.repeat(40), repo={full_name:'acme/app'};
 const ref=n=>({type:'secret_ref',secretId:`${n.repeat(8)}-${n.repeat(4)}-4${n.repeat(3)}-8${n.repeat(3)}-${n.repeat(12)}`});
-async function run(tool,fetcher,fn){const config={enabled:true,baseUrl:'https://forgejo.example',webhookSecret:ref('1'),repositories:[{name:'acme/app',companyId:'c',agentId:'a',forgejoUsername:'bot',allowedOperations:[tool],readSecret:ref('2'),writeSecret:ref('3')}]};const h=createTestHarness({manifest,config});await plugin.definition.setup(h.ctx);h.ctx.secrets.resolve=async()=> 'fixture';const original=globalThis.fetch;globalThis.fetch=fetcher;try{await fn(p=>h.executeTool(tool,{repository:'acme/app',...p},{companyId:'c',agentId:'a'}));}finally{globalThis.fetch=original;}}
+async function run(tool,fetcher,fn){const config={enabled:true,baseUrl:'https://forgejo.example',webhookSecret:ref('1'),repositories:[{name:'acme/app',companyId:'c',agentId:'a',forgejoUsername:'bot',allowedOperations:[tool],readSecret:ref('2'),writeSecret:ref('3')}]};const h=createTestHarness({manifest,config});await plugin.definition.setup(h.ctx);h.ctx.config.get=async()=>config;h.ctx.secrets.resolve=async()=> 'fixture';const original=globalThis.fetch;globalThis.fetch=fetcher;try{await fn(p=>h.executeTool(tool,{repository:'acme/app',...p},{companyId:'c',agentId:'a'}),config);}finally{globalThis.fetch=original;}}
 test('operationId cannot be reused for a different comment target with the same body',async()=>{let posts=0;await run('post_comment',async(url,init)=>{if(String(url).endsWith('/user'))return Response.json({login:'bot'});if(init.method==='POST'){posts++;return Response.json({id:1});}return Response.json({id:1,body:'same',user:{login:'bot'}});},async call=>{assert.match((await call({number:1,body:'same',operationId:'comment-target-1'})).content??'',/Verified/);assert.match((await call({number:2,body:'same',operationId:'comment-target-1'})).error??'',/different request/);assert.equal(posts,1);});});
 test('creation verifies exact returned PR ID and number and validates number before constructing a readback path',async()=>{for(const malformed of [false,true]){let reads=0;await run('create_pull_request',async(url,init)=>{if(String(url).endsWith('/user'))return Response.json({login:'bot'});if(init.method==='POST')return Response.json({id:10,number:malformed?'bad':7});reads++;return Response.json({id:11,number:8,title:'Title',body:'Body',user:{login:'bot'},head:{ref:'feature',repo},base:{ref:'main',repo}});},async call=>{const out=await call({head:'feature',base:'main',title:'Title',body:'Body',operationId:'create-id-check'});assert.ok(out.error);if(malformed)assert.equal(reads,0);});}});
 test('formal review succeeds only after exact author/body/commit/state readback and is not replayed',async()=>{let posts=0;await run('submit_review',async(url,init)=>{if(String(url).endsWith('/user'))return Response.json({login:'bot'});if(init.method==='POST'){posts++;return Response.json({id:4});}if(String(url).endsWith('/reviews/4'))return Response.json({id:4,user:{login:'bot'},body:'Reviewed',commit_id:sha,state:'APPROVED'});return Response.json({head:{sha}});},async call=>{const p={number:7,event:'APPROVE',commitSha:sha,body:'Reviewed',operationId:'review-positive-1'};assert.match((await call(p)).content??'',/Verified/);assert.match((await call(p)).content??'',/Verified/);assert.equal(posts,1);});});
+
+test('write operationId is bound to configured origin and principal',async()=>{
+ for(const field of ['baseUrl','forgejoUsername']){
+  let posts=0;
+  await run('post_comment',async(url,init)=>{
+   if(String(url).endsWith('/user'))return Response.json({login:'bot'});
+   if(init.method==='POST'){posts++;return Response.json({id:1});}
+   return Response.json({id:1,body:'same',user:{login:'bot'}});
+  },async(call,config)=>{
+   const p={number:1,body:'same',operationId:'identity-binding-1'};
+   assert.match((await call(p)).content??'',/Verified/);
+   if(field==='baseUrl')config.baseUrl='https://other.example';
+   else config.repositories[0].forgejoUsername='other-bot';
+   assert.match((await call(p)).error??'',/different request/);
+   assert.equal(posts,1);
+  });
+ }
+});

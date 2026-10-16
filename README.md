@@ -10,7 +10,9 @@ Recommended separation: implementers open PRs, independent reviewers submit revi
 
 ## Tools
 
-- Reads: `list_pull_requests`, `list_issues`, `get_pull_diff`, `list_reviews`, `get_commit_statuses`.
+- Reads: `get_repository`, `get_pull_request`, `get_issue`, `list_comments`, `list_branches`, `get_commit`, `list_pull_commits`, `list_pull_files`, plus `list_pull_requests`, `list_issues`, `get_pull_diff`, `list_reviews`, `get_commit_statuses`.
+- List tools accept explicit bounded `page` and `limit`; a page is not a claim of completeness. Continue pagination until an empty page when full enumeration matters.
+- `create_issue`: create an open issue with explicit title/body and operation ID; no implicit labels, assignees, milestones or closing. Exact author, fields, ID, number and repository are verified.
 - `post_comment`: explicit issue/PR comment.
 - `create_pull_request`: open a PR between existing branches in the same granted repository. Supply `head`, `base`, `title`, `body`, and a unique `operationId`. This does not push a branch or commit, create a fork, or enable cross-repository PRs.
 - `submit_review`: submit `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`, with `number`, `body`, exact full `commitSha`, and `operationId`. The commit must still be the PR head.
@@ -22,7 +24,7 @@ All writes require an explicit operation grant and a write secret. Credentials a
 
 Each write has a caller-supplied operation ID bound to its effective request. Reusing it for a different request is rejected. Intent is stored before the POST, and the exact returned object is read back before reporting success. Creation verifies the PR author, fields, refs and repository identity. Merge handles Forgejo's empty success response and verifies the merged PR, expected head, merge commit and merger.
 
-Known submitted effects are reconciled without reposting. Unknown effects are not automatically replayed; inspect the exact Forgejo target and plugin receipt before recovery. A new operation ID is not a safe workaround for an unknown outcome. The expanded request fingerprint includes the target API path. Pre-v0.2 receipts use a different fingerprint and are rejected on replay rather than migrated or reposted; reconcile those historical effects manually.
+Known submitted effects are reconciled without reposting. Unknown effects are not automatically replayed; inspect the exact Forgejo target and plugin receipt before recovery. A new operation ID is not a safe workaround for an unknown outcome. The expanded request fingerprint includes target API path, configured origin and expected Forgejo principal. Receipts from earlier fingerprint formats use a different fingerprint and are rejected on replay rather than migrated or reposted; reconcile those historical effects manually.
 
 Serialization is process-local. Run one worker for this plugin; the state API does not establish a cross-worker atomic claim. Forgejo's exact-head merge condition and branch protections remain the final external enforcement. Plugin preflight reads are not an atomic approval/check snapshot; protect important target branches in Forgejo rather than relying on client checks alone.
 
@@ -50,3 +52,7 @@ npm run pack:check
 ```
 
 See [VALIDATION.md](VALIDATION.md) for actual execution evidence and limits. Local fixture success is not proof that production agents have the required tool profile, grant, credential or branch permissions. Do not approve or merge a production PR merely as a connectivity test.
+
+## Deliberately excluded capabilities
+
+This is a scoped coding-agent connector, not a Forgejo administrator. It does not expose account/team/repository administration, secrets, hook/protection changes, branch deletion, file/source mutation, CI-status publication, releases/packages, or arbitrary API execution. Issue/PR editing, labels/assignees/milestones, inline reviews, forks and later-event synchronization remain separate future work requiring explicit mutation/reconciliation and authority contracts. CI-status publishing is intentionally unavailable so code authors cannot self-certify required checks through this plugin.

@@ -17,3 +17,14 @@
 6. Distinguish source/package support from installed availability and per-agent grants. Preserve existing live pilot scope; do not assign merge authority to all agents or use a real production merge as a connectivity test.
 
 Build outputs: repository `dist/`, `node_modules/`, versioned npm tarball; isolated policy output `../reports/forgejo-pr-capabilities/merge-policy-dist/`; test TLS fixture `../reports/forgejo-pr-capabilities/tls-fixture/`. Preserve source and evidence; remove this task's inactive disposable outputs after verification. Deployment is a separate readback-verified step with configuration/package rollback preserved.
+
+## v0.3 bounded feature expansion
+
+- Audit installed Swagger and record omitted capabilities separately from recommended coding-agent gaps.
+- Add repository, PR, issue, branch, commit, comment, PR-commit and PR-file reads with explicit bounded pagination.
+- Add durable, identity-bound issue creation using the existing per-company/agent/repository authority boundary.
+- Correct general write fingerprints to bind origin and expected Forgejo principal; reject legacy receipt replay rather than silently migrating uncertain effects.
+- Qualify actual Forgejo effects on disposable pilot-only branches/PR/issue with independent reviewer/merger identities and restore temporary test permissions/tokens.
+- Re-review changed source, package and upgrade via immutable local path with preimage, tool-registration and configuration equality checks.
+
+Task outputs: `dist/`, `node_modules/`, `../reports/forgejo-expanded-features/packed-install/`; source, test logs, live IDs, review and install tarball are retained. Temporary role tokens live only in approved secret storage and must be revoked after live tests. No production repository or agent grant expansion.

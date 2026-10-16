@@ -23,22 +23,20 @@ const plugin=definePlugin({
  },
  async setup(ctx) {
   host=ctx;
-  const labels:Record<string,[string,string]>={list_pull_requests:['List pull requests','Read up to 30 pull requests.'],list_issues:['List issues','Read up to 30 issues.'],get_pull_diff:['Get pull request diff','Read a bounded diff.'],list_reviews:['List reviews','Read pull request reviews.'],get_commit_statuses:['Get commit statuses','Read commit statuses.'],post_comment:['Post comment','Post an explicit comment.'],submit_review:['Submit review','Submit an explicit review; no merge.'],create_pull_request:['Create pull request','Create and verify a same-repository pull request.']};
-  labels.merge_pull_request=['Merge pull request','Merge an independently reviewed exact commit.'];
-  for(const [name] of Object.entries(labels)) { const declaration=manifest.tools?.find(t=>t.name===name); if(!declaration)continue; ctx.tools.register(name,{displayName:declaration.displayName,description:declaration.description,parametersSchema:declaration.parametersSchema},async(raw,runCtx:ToolRunContext)=>{
+  for(const {name} of manifest.tools??[]) { const declaration=manifest.tools?.find(t=>t.name===name); if(!declaration)continue; ctx.tools.register(name,{displayName:declaration.displayName,description:declaration.description,parametersSchema:declaration.parametersSchema},async(raw,runCtx:ToolRunContext)=>{
    try {
     const p=raw as Record<string,unknown>; if(!p||typeof p!=='object'||typeof p.repository!=='string') return {error:'Invalid tool input'};
     if(name==='merge_pull_request')return await executeMerge(ctx,p,runCtx,serialize);
     const config=await configFor(runCtx.companyId); const key=p.repository.toLowerCase();
     const grant=config.repositories.find(g=>g.name===key&&g.companyId===runCtx.companyId&&g.agentId===runCtx.agentId); if(!grant)return {error:'Repository access denied'};
     if(!grant.allowedOperations.includes(name)) return {error:'Operation is not allowed for this agent'};
-    const req=toolPath(key,name,p); const write=['post_comment','submit_review','create_pull_request'].includes(name);
+    const req=toolPath(key,name,p); const write=['post_comment','submit_review','create_pull_request','create_issue'].includes(name);
     const readToken=await secret(grant.readSecret,runCtx.companyId,`repositories.${grant.configIndex}.readSecret`);
     if(!write){const text=await requestForgejo(config.baseUrl,req.path,readToken,req.method,req.body);return {content:text||'OK'};}
     if(!grant.writeSecret)return {error:'Write operation is not configured'};
     if(typeof p.operationId!=='string'||!/^[A-Za-z0-9._:-]{8,128}$/.test(p.operationId))return {error:'A unique operationId is required'};
     const writeToken=await secret(grant.writeSecret,runCtx.companyId,`repositories.${grant.configIndex}.writeSecret`);
-    const fingerprint=createHash('sha256').update(JSON.stringify({name,repository:key,path:req.path,method:req.method,payload:req.body})).digest('hex');
+    const fingerprint=createHash('sha256').update(JSON.stringify({name,baseUrl:config.baseUrl,principal:grant.forgejoUsername,repository:key,path:req.path,method:req.method,payload:req.body})).digest('hex');
     const stateKey={scopeKind:'company' as const,scopeId:runCtx.companyId,namespace:'forgejo-write',stateKey:`${runCtx.agentId}:${p.operationId}`};
     return serialize(`${runCtx.companyId}:${runCtx.agentId}:${p.operationId}`,async()=>{
     const prior=await ctx.state.get(stateKey) as any;
@@ -51,7 +49,7 @@ const plugin=definePlugin({
      const principal=JSON.parse(await requestForgejo(config.baseUrl,'/api/v1/user',writeToken,'GET'));
      if((principal?.login??principal?.username)!==grant.forgejoUsername)return {error:'Write credential principal does not match configured Forgejo username'};
      if(name==='submit_review') {const pr=JSON.parse(await requestForgejo(config.baseUrl,`/api/v1/repos/${encodeURIComponent(key.split('/')[0])}/${encodeURIComponent(key.split('/')[1])}/pulls/${p.number}`,readToken,'GET'));if(pr?.head?.sha!==p.commitSha)return {error:'Review commit is not the current pull request head'};}
-     if(name==='create_pull_request') {
+     if(name==='create_pull_request'||name==='create_issue') {
       const fresh=await configFor(runCtx.companyId);const current=fresh.repositories.find(g=>g.name===key&&g.companyId===runCtx.companyId&&g.agentId===runCtx.agentId);
       if(!current||!current.allowedOperations.includes(name))return {error:'Operation is not allowed for this agent'};
       if(fresh.baseUrl!==config.baseUrl||current.forgejoUsername!==grant.forgejoUsername||JSON.stringify(current.writeSecret)!==JSON.stringify(grant.writeSecret))return {error:'Create grant changed during preflight; no write was submitted'};
@@ -62,13 +60,13 @@ const plugin=definePlugin({
      await ctx.state.set(stateKey,{status:'submitted',fingerprint,repository:key,operation:name,result,expected:{payload:req.body},submittedAt:new Date().toISOString()});
     }
     const root=`/api/v1/repos/${encodeURIComponent(key.split('/')[0])}/${encodeURIComponent(key.split('/')[1])}`;
-    const creating=name==='create_pull_request';
+    const creating=name==='create_pull_request'||name==='create_issue';
     if(creating&&(!Number.isSafeInteger(result?.number)||result.number<1||result.number>2147483647))return {error:'Write returned no verifiable PR number; retry will reconcile only'};
-    const checkPath=creating?`${root}/pulls/${result.number}`:name==='post_comment'?`${root}/issues/comments/${result.id}`:`${root}/pulls/${p.number}/reviews/${result.id}`;
+    const checkPath=creating?`${root}/${name==='create_issue'?'issues':'pulls'}/${result.number}`:name==='post_comment'?`${root}/issues/comments/${result.id}`:`${root}/pulls/${p.number}/reviews/${result.id}`;
     const observed=JSON.parse(await requestForgejo(config.baseUrl,checkPath,readToken,'GET'));
     const author=observed?.user?.login??observed?.user?.username;
     const expectedState=p.event==='APPROVE'?'APPROVED':p.event==='REQUEST_CHANGES'?'REQUEST_CHANGES':'COMMENT';
-    const valid=creating?observed?.id===result.id&&observed?.number===result.number&&author===grant.forgejoUsername&&observed?.title===p.title&&observed?.body===p.body&&observed?.head?.ref===p.head&&observed?.base?.ref===p.base&&typeof observed?.head?.repo?.full_name==='string'&&observed.head.repo.full_name.toLowerCase()===key&&typeof observed?.base?.repo?.full_name==='string'&&observed.base.repo.full_name.toLowerCase()===key:author===grant.forgejoUsername&&observed?.body===p.body&&(name==='post_comment'||(observed?.commit_id===p.commitSha&&String(observed?.state??'').toUpperCase()===expectedState));
+    const valid=name==='create_issue'?observed?.id===result.id&&observed?.number===result.number&&author===grant.forgejoUsername&&observed?.title===p.title&&observed?.body===p.body&&observed?.state==='open'&&!observed?.pull_request&&typeof observed?.repository?.full_name==='string'&&observed.repository.full_name.toLowerCase()===key:creating?observed?.id===result.id&&observed?.number===result.number&&author===grant.forgejoUsername&&observed?.title===p.title&&observed?.body===p.body&&observed?.head?.ref===p.head&&observed?.base?.ref===p.base&&typeof observed?.head?.repo?.full_name==='string'&&observed.head.repo.full_name.toLowerCase()===key&&typeof observed?.base?.repo?.full_name==='string'&&observed.base.repo.full_name.toLowerCase()===key:author===grant.forgejoUsername&&observed?.body===p.body&&(name==='post_comment'||(observed?.commit_id===p.commitSha&&String(observed?.state??'').toUpperCase()===expectedState));
     if(!valid)return {error:`Write returned ID ${result.id}; read-back did not match; retry will reconcile only`};
     await ctx.state.set(stateKey,{status:'verified',fingerprint,repository:key,operation:name,resultId:result.id,number:result.number,verifiedAt:new Date().toISOString()});
     return {content:`Verified Forgejo ${name} ID ${result.id}${creating?` number ${result.number}`:''}`};
