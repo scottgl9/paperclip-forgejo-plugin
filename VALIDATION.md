@@ -1,44 +1,65 @@
-# Validation evidence
+# Validation and known limits
 
-## Original v0.1 qualification
+This document summarizes qualification of the source releases. It is not a live deployment status page or a guarantee that every agent has access. This summary omits private deployment identifiers; raw execution logs, credentials and backups belong outside Git.
 
-The initial implementation targeted the published `@paperclipai/plugin-sdk@2026.1012.0`, with explicit repository grants, signed webhook handling, comment and review write receipts, indexed company-scoped secret resolution and a real SDK worker lifecycle test. The original final suite passed 16 tests plus typecheck/build/package checks. Production pilot evidence is separate from source tests.
+## v0.3 qualification
 
-## v0.2 PR workflow qualification
+The final candidate passed:
 
-- Request-validation tracer for creation was observed RED before implementation. SDK creation tests then exercised actual registered handlers, durable intent, exact PR metadata/readback, denied/changed grants, changed operation payloads and unknown outcomes without reposting.
-- The controller replaced an incomplete merge-test placeholder with actual SDK handler tests. The first meaningful RED run failed because no merge handler was registered. After implementation, an async rejection exposed the missing `await` in the outer error boundary; it was corrected and retested.
-- Installed Forgejo OpenAPI was read from its authenticated deployment's public schema endpoint, `https://git.mesh.skelm.dev/swagger.v1.json`. Actual `CommitStatus` entries use `status`, not GitHub's `state`, and do not include per-status SHA. `CombinedStatus.sha` binds the complete set to the expected commit. A positive test with the real shape was observed RED before this compatibility correction.
-- Guard tests cover non-open/draft/merged/unmergeable PRs; exact head/repository; independent official approval; stale/dismissed evidence; outstanding change requests that a COMMENT cannot erase; duplicate/invalid review IDs; incomplete, empty, failed or wrong-SHA statuses.
-- A clamped-page-size regression was observed RED: an approval on a short first page could hide a change request on the second page. Merge qualification now reads review pages until an empty page, bounded to ten pages, and denies overflow or duplicate evidence.
-- Target-binding regressions were observed RED before corrections: identical comment bodies with the same operation ID could target different issues, and PR creation could accept readback with mismatched ID/number. Fingerprints now include effective method/path/payload; creation validates the returned PR number before path construction and matches exact IDs/numbers.
-- `npm test`: **38 tests passed**, zero failures/skips, including a real SDK subprocess initialize/config replay/shutdown/natural exit test.
-- `npm run typecheck`: passed. `npm pack`: produced a real v0.2.0 tarball containing manifest, worker, policy and merge implementation plus runtime SDK dependency.
-- A production-dependencies-only tarball install (`--omit=dev --ignore-scripts`) passed an independent real loopback HTTPS fixture. It exercised the actual installed plugin through the SDK harness and real Node fetch/TLS: create PR, exact-head APPROVE review, empty-response merge and exact readbacks. Three POSTs occurred; repeating the merge did not repost, and the reviewer was denied merge authority. The test CA was scoped only to that subprocess; shared TLS validation was not changed.
+- 50 automated tests, with no failures.
+- TypeScript typecheck and npm package checks.
+- Production-dependencies-only package installation and SDK worker initialization, configuration replay, invalid-configuration rejection, shutdown and natural exit checks.
+- Independent review of the final candidate.
 
-Raw execution receipts and the installed OpenAPI excerpts are retained outside Git under `../reports/forgejo-pr-capabilities/`.
+An isolated acceptance test exercised all 18 tool types through the candidate plugin and SDK harness against Forgejo 16.0.3 over HTTPS. It covered repository and issue reads, issue creation and comments, PR creation, independent approval, guarded merge and exact readbacks. Repeated create/merge calls did not duplicate effects. Reviewer merge attempts and merges before qualification were denied.
 
-## Limits and operational boundaries
+Only disposable pilot branches, an issue and a PR were used. The issue was closed; the PR was merged into a disposable base branch, not the repository's main branch. Temporary collaborator permissions were restored and temporary tokens revoked, with rejected-token readbacks. Test status evidence was explicitly test-only, not a production CI result or a plugin capability.
 
-- No production PR was opened, reviewed or merged as a connectivity test. Local HTTPS/SDK evidence is not an authenticated production-agent workflow.
-- New tool registration does not grant agent access. Existing company/repository grants and tool-profile bindings remain unchanged unless separately configured and read back.
-- Merge methods are `merge` and `squash`; exact head, current independent approval and nonempty successful commit statuses are mandatory. Important target branches also need Forgejo's server-side protection: client preflight is not an atomic approval/check snapshot.
-- Review qualification is bounded; excessive/incomplete evidence fails closed. Workers must remain single-consumer because state persistence and local serialization are not a cross-process lock.
-- Historical pre-v0.2 write receipts are not rewritten. Their different fingerprint rejects replay rather than risking a duplicate effect. Unknown effects always require explicit reconciliation.
-- Webhooks still mirror only `opened` items; PR merge/close/comment synchronization and automatic Paperclip task completion are not implemented.
-- `/api/v1/user` principal validation must be supported by the chosen write credential; repository-selected token limitations do not authorize broader token scopes.
+Live testing exposed an incorrect review event: the public tool accepts `APPROVE`, but Forgejo requires wire event `APPROVED`. A failing regression test preceded the correction. Earlier fixture success did not establish compatibility with the actual Forgejo review endpoint.
 
-## Generated output lifecycle
+A read-only reviewer produced nonofficial review evidence. The pilot required temporary reviewer write access to obtain the official independent approval required by the merge policy. Separate plugin operations do not establish merge-only or review-only isolation in Forgejo itself.
 
-The tarball is the install/rollback artifact. Source, tests, receipts and deployed or rollback packages are retained. Agent-created `dist/`, build/test `node_modules/`, isolated policy output, disposable production-only test installation and local TLS fixture are removable only after final checks and fresh active-reference/nested-mount checks. Retained outputs and actual reclaimed space are reported separately at task completion.
+## Regression coverage
 
-## v0.3 expanded capabilities and live Forgejo acceptance
+The suite covers:
 
-- Full installed Swagger captured (326 paths). Added eight bounded read tools, explicit pagination and durable open-issue creation; fixed general write fingerprints to include origin/principal after a regression demonstrated the earlier omission.
-- 50 tests, typecheck, package and installed-host manifest validation passed. Production-only package SDK worker initialize/config replay/invalid-config/shutdown/natural exit passed.
-- Real HTTPS calls through the candidate plugin/SDK harness exercised all 18 tool types against `paperclip/connector-pilot`. This is actual Forgejo authentication/effects, not a fake API; it is not an autonomous Paperclip agent-run acceptance.
-- Live testing found v0.2's public `APPROVE` was incorrectly sent as wire `APPROVE`, creating a PENDING review. Source for installed Forgejo16.0.3 confirms `ReviewStateApproved = "APPROVED"`. A RED/GREEN regression now translates the public event to `APPROVED`. The exact pending test review was read and reconciled; no blind repeat of PR/issue creation occurred.
-- Real issue #3 was created/read/commented/paginated and closed after validation. PR #4 was created between disposable branches, independently approved by `paperclip-reviewer`, and merged by `paperclip-forge-lead` at head `78bf90021f694b1f9a4c019333c6bc18dfcb5d84`, merge commit `3b87f9bfd6cc352991ce5476780f51ac83ad4fea`. Repeated create/merge invocations did not duplicate effects; reviewer merge and pre-qualification merge were denied. A clearly named test-only status context was set by test preparation, not a plugin tool or production CI claim.
-- Read-only reviewer access creates nonofficial evidence; for this policy the temporary pilot reviewer needed write access to produce an official independent approval. Production grants were not changed. This platform limitation must not be disguised as merge-only/read-only isolation.
-- All temporary pilot collaborator grants were restored to their exact preimage (only original pilot read grant), role tokens revoked and each rejected with401, and temporary bootstrap tokens removed. Main stayed `df086491d864c42884ca6703956d43c2ddeb6b4a`. Four disposable test branches and the closed issue/merged PR remain as live evidence, including one preparation attempt's branch pair; no production source was changed.
-- Logs, original failed live run, resumed successful run, IDs and scope audit retained in `../reports/forgejo-expanded-features/`; backup/access preimage/scripts retained in `../.hermes/paperclip-plugins-validation/`. Earlier v0.2 fixture success did not establish the real wire review enum; this live qualification supersedes it.
+- Explicit company, agent, repository and operation grants; indexed company-scoped secret resolution.
+- Bounded inputs, fixed API routes, pagination and transport limits.
+- Signed raw-byte webhooks and durable delivery/effect deduplication.
+- Write intent before POST, exact returned identifiers and object readbacks, changed-request rejection and unknown outcomes without automatic reposting.
+- Receipt fingerprints bound to effective method, path, payload, configured origin and expected principal.
+- Open, non-draft, mergeable PRs at the exact expected head and repository.
+- Current, independent, official approval; stale or dismissed reviews; unresolved change requests that comments cannot erase; duplicate or invalid review evidence.
+- Complete, nonempty successful commit statuses bound to the expected SHA. Forgejo's individual status field is `status`, while the combined response supplies `sha`.
+- Review enumeration until an empty page, with bounded overflow and duplicate evidence denied. A short page is not treated as proof of completeness.
+- Empty merge success responses, subsequent merged-PR readback and asynchronous error handling.
+
+## Earlier releases
+
+- v0.1: 16 tests plus typecheck, build and package checks qualified the initial reads, comment/review receipts, signed webhook intake and worker lifecycle.
+- v0.2: 38 tests plus typecheck, packaging and a production-only HTTPS fixture qualified PR creation and guarded merges. The fixture exercised handlers, real Node fetch/TLS, duplicate prevention and denied reviewer merges. The later v0.3 live test found and corrected its missed review-event compatibility issue.
+
+These are historical test counts, not a requirement to preserve an exact count or a substitute for checking a new candidate.
+
+## OAuth feasibility: provider proof only
+
+A separate restricted-account proof against Forgejo 16.0.3 passed 22 checks. It exercised the real sign-in and consent endpoints with an isolated HTTP session, authorization-code exchange with PKCE S256, exact callback state, rejection of an incorrect verifier and reused code, identity and repository reads, denial of another private repository, refresh, and revocation after temporary application deletion. The account's repository permissions were unchanged.
+
+This was not browser UI automation, Paperclip callback qualification, or an OAuth-enabled plugin release. The installed Paperclip OAuth flow has no supported plugin binding for consuming its managed connection tokens. Token ownership, refresh, disconnect and authorization checks need a reviewed integration before the plugin can offer browser-based connection.
+
+Forgejo 16.0.3 has an optional `ENABLE_ADDITIONAL_GRANT_SCOPES` setting, disabled by default. With enforcement disabled, requested OAuth scopes must not be treated as PAT-equivalent restrictions: authorizing-account access is the boundary. The proof used a restricted account and did not change the shared setting. Production OAuth access requires a separate permission review.
+
+## Remaining boundaries
+
+- Real plugin/SDK acceptance is not an autonomous Paperclip agent-run acceptance. Production tool profiles, repository grants, credentials and branch permissions must be qualified separately.
+- Registering tools does not grant access. New operations do not expand existing grants or bindings.
+- Merge methods are `merge` and `squash`. Important branches also need Forgejo server-side protection: client preflight is not an atomic approval/check snapshot.
+- State persistence and process-local serialization are not a cross-worker lock. Run one worker for this plugin.
+- Historical receipt fingerprints are not migrated. Replay with a changed fingerprint is rejected; uncertain effects require manual reconciliation, not a new operation ID.
+- Webhooks mirror only opened issues and PRs. Later comments, merge/close state and automatic Paperclip task completion are not synchronized.
+- Write credentials must support `/api/v1/user` principal validation. Repository-selected token compatibility must be checked rather than solved by silently widening scopes.
+- Browser OAuth setup and native Apps/Connectors catalog integration are not implemented in v0.3.
+
+## Artifact handling
+
+Keep source, unique qualification evidence and required deployed/rollback packages. Credentials and backups stay outside Git. Disposable build output, dependency installs and fixture packages may be removed only after verification and fresh checks for active references. No production PR should be approved or merged merely to test connectivity.

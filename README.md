@@ -1,6 +1,14 @@
 # Paperclip Forgejo connector
 
-Installable Paperclip worker targeting `@paperclipai/plugin-sdk` **2026.1012.0**. Disabled unless `enabled: true` is explicitly configured.
+A scoped Forgejo integration for Paperclip, with 18 tools for repository reads, issue creation, comments, PR creation, reviews and guarded merges. The v0.3 release targets `@paperclipai/plugin-sdk` **2026.1012.0** and is disabled unless `enabled: true` is explicitly configured.
+
+## Connection and authentication status
+
+- **Available:** a worker plugin configured with Paperclip secret references and explicit repository/agent grants.
+- **Not yet available:** browser-based **Connect Forgejo** OAuth setup or a native Forgejo entry in Paperclip's Apps/Connectors catalog. The manifest's `connector` category does not register a catalog entry.
+- **OAuth feasibility verified separately:** Forgejo authorization-code authentication with PKCE, refresh and revocation worked with a restricted pilot account. That proof is not an OAuth-enabled plugin implementation; see [validation and remaining integration work](VALIDATION.md#oauth-feasibility-provider-proof-only).
+
+Use credentials held in Paperclip secret storage for the current plugin. Do not paste credentials into task comments, tool parameters or repository files. Browser sign-in to Paperclip does not grant this plugin access to Forgejo.
 
 ## Repository and agent authority
 
@@ -11,7 +19,7 @@ Recommended separation: implementers open PRs, independent reviewers submit revi
 ## Tools
 
 - Reads: `get_repository`, `get_pull_request`, `get_issue`, `list_comments`, `list_branches`, `get_commit`, `list_pull_commits`, `list_pull_files`, plus `list_pull_requests`, `list_issues`, `get_pull_diff`, `list_reviews`, `get_commit_statuses`.
-- List tools accept explicit bounded `page` and `limit`; a page is not a claim of completeness. Continue pagination until an empty page when full enumeration matters.
+- Paginated read tools accept `page` (1–10,000, default 1) and `limit` (1–50, default 30); `get_commit_statuses` instead reads the bounded combined-status response. A page is not a claim of completeness. Continue pagination until an empty page when full enumeration matters.
 - `create_issue`: create an open issue with explicit title/body and operation ID; no implicit labels, assignees, milestones or closing. Exact author, fields, ID, number and repository are verified.
 - `post_comment`: explicit issue/PR comment.
 - `create_pull_request`: open a PR between existing branches in the same granted repository. Supply `head`, `base`, `title`, `body`, and a unique `operationId`. This does not push a branch or commit, create a fork, or enable cross-repository PRs.
