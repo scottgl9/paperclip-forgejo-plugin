@@ -29,6 +29,12 @@ test('repository identity is normalized exactly as owner/name', () => {
  assert.throws(()=>repositoryKey('../acme','project'));
 });
 
+test('pull request creation is restricted to same-repository branches and bounded metadata',()=>{
+ const req=toolPath('acme/app','create_pull_request',{head:'feature/topic',base:'main',title:'A change',body:'Details'});
+ assert.deepEqual(req,{path:'/api/v1/repos/acme/app/pulls',method:'POST',body:{head:'feature/topic',base:'main',title:'A change',body:'Details'}});
+ assert.throws(()=>toolPath('acme/app','create_pull_request',{head:'../other',base:'main',title:'x',body:''}));
+});
+
 test('list operations need no item number and review approval is pinned to a full commit SHA',()=>{
  assert.equal(toolPath('acme/app','list_pull_requests',{state:'open'}).path,'/api/v1/repos/acme/app/pulls?state=open&limit=30');
  assert.throws(()=>toolPath('acme/app','submit_review',{number:12,event:'APPROVE',body:'ok'}));

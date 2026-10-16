@@ -1,7 +1,19 @@
-# Plan — Forgejo Paperclip connector v0.1
+# Plan — Forgejo Paperclip connector
 
-- Build an installable TypeScript plugin against the exact published Paperclip SDK.
-- Enforce explicit per-company repository grants and per-repository read/write secret refs; reject non-HTTPS origins and arbitrary API paths.
-- Expose only bounded PR/issue/diff/review/status reads and explicit comment/review writes; omit merge.
-- Verify Forgejo webhook signatures over raw request bytes; persist deduplication/effect state and fail closed on ambiguous delivery outcomes.
-- Exercise policy and transport using local fixtures, then typecheck, build, test, and npm-pack. No live Forgejo or Paperclip writes.
+## Original v0.1 delivery
+
+- Installable TypeScript plugin against the exact published Paperclip SDK.
+- Explicit per-company/per-agent repository grants and read/write secret refs; fixed HTTPS origin and no arbitrary API paths.
+- Bounded PR/issue/diff/review/status reads, explicit comments and exact-head reviews.
+- Signed webhook intake with durable deduplication and conservative unknown-effect handling.
+
+## PR workflow extension
+
+1. Add `create_pull_request` for existing same-repository branches, with explicit title/body/head/base, grant and credential-principal validation, durable operation IDs and exact PR readback.
+2. Preserve and exercise `submit_review` on the exact current head; reviewers do not implicitly receive merge authority.
+3. Add `merge_pull_request` pinned to an explicit head commit and merge method. Require current independent approval, no unresolved current-head change requests, complete successful commit statuses and a mergeable open non-draft PR. Preserve Forgejo branch protection; force, automatic delayed merge and branch deletion remain disabled.
+4. Reconcile known submitted effects without reposting. Unknown outcomes remain blocked; changed operation-ID payloads are rejected. Serialize merge attempts for the same PR within the single-worker deployment boundary.
+5. Verify strict RED/GREEN tests, full regression suite, typecheck, real HTTPS fixture, SDK worker lifecycle and production-only packed install. Freeze the candidate for independent specification and security review.
+6. Distinguish source/package support from installed availability and per-agent grants. Preserve existing live pilot scope; do not assign merge authority to all agents or use a real production merge as a connectivity test.
+
+Build outputs: repository `dist/`, `node_modules/`, versioned npm tarball; isolated policy output `../reports/forgejo-pr-capabilities/merge-policy-dist/`; test TLS fixture `../reports/forgejo-pr-capabilities/tls-fixture/`. Preserve source and evidence; remove this task's inactive disposable outputs after verification. Deployment is a separate readback-verified step with configuration/package rollback preserved.

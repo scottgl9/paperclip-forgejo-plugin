@@ -1,6 +1,6 @@
 {
   "name": "paperclip-forgejo-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bounded Forgejo connector for Paperclip",
   "type": "module",
   "files": [

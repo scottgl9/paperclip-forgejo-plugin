@@ -1,34 +1,52 @@
-# Paperclip Forgejo connector v0.1
+# Paperclip Forgejo connector
 
-Installable Paperclip worker targeting `@paperclipai/plugin-sdk` **2026.1012.0**. The plugin is disabled unless `enabled: true` is explicitly configured.
+Installable Paperclip worker targeting `@paperclipai/plugin-sdk` **2026.1012.0**. Disabled unless `enabled: true` is explicitly configured.
 
-## v0.1 scope
+## Repository and agent authority
 
-- Per-company, per-agent repository grants. Every grant names the exact `owner/repository`, Forgejo login, allowed tool operations, a read secret reference, and (only when a write is allowed) a write secret reference.
-- Read tools: pull requests, issues, pull diff, reviews, and commit statuses (bounded to 30 items or a 100 KB response).
-- Explicit writes: comments and reviews require a caller-supplied operation ID. Review submission requires a full 40-character commit SHA and checks that it is still the pull request head. Writes persist intent state, verify the returned object by reading it back (including configured Forgejo author, body, and review SHA/state), and never automatically replay an unknown outcome. A known returned ID is reconciled on subsequent calls.
-- Webhooks: signed raw-byte `X-Forgejo-Signature`, with `X-Forgejo-Event` and `X-Forgejo-Delivery`; exact repository-to-company allowlist matching, serialized handling, durable delivery deduplication, and `opened` issue/PR linking to Paperclip with `originKind: plugin:paperclip.forgejo`. The payload used for effects is parsed only from the bytes that were verified.
+Every grant names an exact `owner/repository`, company, agent, Forgejo username, allowed operations, read secret reference and optional write secret reference. Registering a tool does not grant it to an agent: Paperclip tool profiles, this plugin's repository grant and the Forgejo credential/repository permissions must all allow the operation.
 
-## Explicit exclusions
+Recommended separation: implementers open PRs, independent reviewers submit reviews, and the authorized Lead merges. Review authority does not imply merge authority. Secrets remain in Paperclip secret storage; no token belongs in a tool call or issue body. Shared local execution is not OS-level agent isolation.
 
-There is no merge tool. Webhook v0.1 only mirrors `opened` events; it does not mirror later comments, close/merge state, or infer task completion from a merged pull request. It does not expose arbitrary API paths or allow write operations unless explicitly granted to that agent. These limitations are deliberate, not implied support.
+## Tools
 
-## Configuration outline
+- Reads: `list_pull_requests`, `list_issues`, `get_pull_diff`, `list_reviews`, `get_commit_statuses`.
+- `post_comment`: explicit issue/PR comment.
+- `create_pull_request`: open a PR between existing branches in the same granted repository. Supply `head`, `base`, `title`, `body`, and a unique `operationId`. This does not push a branch or commit, create a fork, or enable cross-repository PRs.
+- `submit_review`: submit `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`, with `number`, `body`, exact full `commitSha`, and `operationId`. The commit must still be the PR head.
+- `merge_pull_request`: merge an explicitly named PR and exact full `commitSha`, with an explicit `mergeMethod` and `operationId`. The PR must be open, non-draft, mergeable, independently approved on that head, without unresolved current-head change requests, and have complete successful commit-status evidence. Forgejo branch protections still apply. Forced merge, delayed auto-merge and branch deletion are always disabled.
 
-Configure a bare HTTPS origin, a secret-ref webhook signing key, and a non-empty repository grant list. A grant has `name`, `companyId`, `agentId`, `forgejoUsername`, `allowedOperations`, `readSecret`, and optional `writeSecret`. Secret references must use the SDK `EnvSecretRefBinding` shape and UUID secret IDs. Start with `enabled: false`; set it true only after reviewing grants and origin.
+All writes require an explicit operation grant and a write secret. Credentials are checked against the configured Forgejo principal before writing. Existing principal preflight uses `/api/v1/user`; a token that cannot access that endpoint is rejected, not silently widened. Forgejo repository-selected token compatibility must be checked separately.
 
-Register the Forgejo webhook endpoint at Paperclip's plugin webhook URL for `endpointKey: forgejo`, and subscribe only to `issues` and `pull_request`. Forgejo signature verification uses the exact raw request bytes.
+## Durable write handling
 
-### Private HTTPS instances
+Each write has a caller-supplied operation ID bound to its effective request. Reusing it for a different request is rejected. Intent is stored before the POST, and the exact returned object is read back before reporting success. Creation verifies the PR author, fields, refs and repository identity. Merge handles Forgejo's empty success response and verifies the merged PR, expected head, merge commit and merger.
 
-The connector uses standard Node `fetch` deliberately: the installed Paperclip host `ctx.http.fetch` rejects private-IP destinations, which blocks private Forgejo deployments. The configured origin is an operator-trusted, fixed HTTPS origin; runtime requests are constructed only from fixed API route templates and validated values, redirects are rejected, and each call is timed out and response-bounded. No user-supplied URL or arbitrary path is accepted. Network/DNS policy for that configured origin remains an operator responsibility.
+Known submitted effects are reconciled without reposting. Unknown effects are not automatically replayed; inspect the exact Forgejo target and plugin receipt before recovery. A new operation ID is not a safe workaround for an unknown outcome. The expanded request fingerprint includes the target API path. Pre-v0.2 receipts use a different fingerprint and are rejected on replay rather than migrated or reposted; reconcile those historical effects manually.
 
-## Build and test
+Serialization is process-local. Run one worker for this plugin; the state API does not establish a cross-worker atomic claim. Forgejo's exact-head merge condition and branch protections remain the final external enforcement. Plugin preflight reads are not an atomic approval/check snapshot; protect important target branches in Forgejo rather than relying on client checks alone.
+
+## Webhooks
+
+Signed raw-byte `X-Forgejo-Signature`, `X-Forgejo-Event` and `X-Forgejo-Delivery` are checked against exact repository/company grants. Intake serializes handling and persists delivery/effect deduplication. Only `opened` issue/PR events are mirrored into Paperclip with `originKind: plugin:paperclip.forgejo`; subsequent comments/merge/close state are not synchronized, and a merged PR does not automatically complete a Paperclip task.
+
+## Configuration
+
+Configure a bare HTTPS `baseUrl`, a `webhookSecret` SDK secret-ref binding, and nonempty `repositories`. Each grant has `name`, `companyId`, `agentId`, `forgejoUsername`, `allowedOperations`, `readSecret`, and (when writes are allowed) `writeSecret`. Secret references use UUID secret IDs. Begin disabled and inspect exact grants before enabling. New tools do not change existing grants or profile bindings.
+
+The webhook endpoint uses `endpointKey: forgejo`. Subscribe only to `issues` and `pull_request`. Private destination allowlisting in Forgejo is a separate operator-controlled policy.
+
+## Private HTTPS instances
+
+Standard Node `fetch` deliberately supports operator-configured private Forgejo origins because this installed host's `ctx.http.fetch` rejects private IPs. Calls use fixed API templates, reject redirects, validate inputs, verify TLS, and bound response time and bytes. The configured HTTPS origin is trusted operator input; network/DNS policy remains the operator's responsibility.
+
+## Build and qualification
 
 ```sh
 npm ci
 npm test
-npm pack
+npm run typecheck
+npm run pack:check
 ```
 
-See [VALIDATION.md](VALIDATION.md) for real SDK harness, fixture-transport, and packaging evidence. No live Forgejo/Paperclip service or secret is used by tests.
+See [VALIDATION.md](VALIDATION.md) for actual execution evidence and limits. Local fixture success is not proof that production agents have the required tool profile, grant, credential or branch permissions. Do not approve or merge a production PR merely as a connectivity test.
